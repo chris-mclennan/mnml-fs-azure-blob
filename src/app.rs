@@ -8,7 +8,6 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::thread;
-use tmnl_protocol::Message;
 
 /// What a tab is currently showing. Mutates as the user drills in /
 /// out. The initial value comes from the tab's TabConfig.
@@ -54,13 +53,6 @@ pub struct App {
     /// `d` to delete. The UI surfaces "delete <blob>? y/N" and the
     /// next key press resolves it.
     pub pending_confirm: Option<PendingConfirm>,
-    /// True when the binary is running as `--blit <socket>` —
-    /// changes the file-open handoff from a toast (standalone) to
-    /// a `Message::OpenFile { path }` emission (blit-host).
-    pub in_blit_mode: bool,
-    /// Outgoing messages queued for the blit-host loop to drain
-    /// and write to the host socket. Ignored in standalone mode.
-    pub pending_outgoing: Vec<Message>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,8 +76,6 @@ impl App {
             active_tab: 0,
             status: String::new(),
             pending_confirm: None,
-            in_blit_mode: false,
-            pending_outgoing: Vec::new(),
         };
         app.refresh_active();
         Ok(app)
@@ -256,16 +246,7 @@ impl App {
                 match azure_blob::download(&account, &container, &b.full_name, &dest) {
                     Ok(path) => {
                         let path_str = path.to_string_lossy().to_string();
-                        if self.in_blit_mode {
-                            // In-place handoff — emit OpenFile so the
-                            // host (mnml) opens the file in its editor.
-                            self.pending_outgoing.push(Message::OpenFile {
-                                path: path_str.clone(),
-                            });
-                            self.status = format!("opened in editor: {path_str}");
-                        } else {
-                            self.status = format!("downloaded → {path_str}");
-                        }
+                        self.status = format!("downloaded → {path_str}");
                     }
                     Err(e) => self.status = format!("download failed: {e}"),
                 }
